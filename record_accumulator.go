@@ -7,7 +7,6 @@ import (
 
 type RecordAccumulatorConfig struct {
 	batchSize         int
-	totalMemorySize   int
 	compressionType   string
 	linger            time.Duration
 	retryBackoff      time.Duration
