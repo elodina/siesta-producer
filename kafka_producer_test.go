@@ -129,7 +129,6 @@ func BenchmarkProducer(b *testing.B) {
 	producerConfig.BatchSize = 1
 	producerConfig.Linger = 500 * time.Millisecond
 	producer := NewKafkaProducer(producerConfig, ByteSerializer, StringSerializer, connector)
-	// metadatas := make(chan (<-chan *RecordMetadata), 1000)
 	record := &ProducerRecord{Topic: "siesta", Value: "test"}
 	for i := 0; i < b.N; i++ {
 		<-producer.Send(record)
