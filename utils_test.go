@@ -26,6 +26,10 @@ import (
 	"time"
 )
 
+type Fataler interface {
+	Fatal(...interface{})
+}
+
 const tcpListenerAddress = "localhost:0"
 
 func assert(t *testing.T, actual interface{}, expected interface{}) {
@@ -130,7 +134,7 @@ func startTCPListener(t *testing.T) net.Listener {
 	return listener
 }
 
-func testConnector(t *testing.T) *siesta.DefaultConnector {
+func testConnector(t Fataler) *siesta.DefaultConnector {
 	config := siesta.NewConnectorConfig()
 	config.BrokerList = []string{"localhost:9092"}
 
