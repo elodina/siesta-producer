@@ -108,25 +108,21 @@ func (s *Selector) requestDispatcher() {
 		id, conn, err := link.GetConnection()
 		if err != nil {
 			link.Failed()
-			if s.config.RequiredAcks > 0 {
-				request.responseChan <- &rawResponseAndError{nil, link, err}
-			}
+			request.responseChan <- &rawResponseAndError{nil, link, err, nil}
 			continue
 		}
 
 		if err := s.send(id, conn, request.request); err != nil {
 			link.Failed()
-			if s.config.RequiredAcks > 0 {
-				request.responseChan <- &rawResponseAndError{nil, link, err}
-			} else {
-				link.ReturnConnection(conn)
-			}
+			request.responseChan <- &rawResponseAndError{nil, link, err, nil}
+			link.ReturnConnection(conn)
 			continue
 		}
 
 		if s.config.RequiredAcks > 0 {
 			s.responses <- &ConnectionRequest{connection: conn, request: request}
 		} else {
+			request.responseChan <- &rawResponseAndError{nil, link, nil, nil}
 			link.Succeeded()
 			link.ReturnConnection(conn)
 		}
@@ -142,14 +138,14 @@ func (s *Selector) responseDispatcher() {
 		bytes, err := s.receive(conn)
 		if err != nil {
 			link.Failed()
-			responseChan <- &rawResponseAndError{nil, link, err}
+			responseChan <- &rawResponseAndError{nil, link, nil, err}
 			link.ReturnConnection(conn)
 			continue
 		}
 
 		link.Succeeded()
 		link.ReturnConnection(conn)
-		responseChan <- &rawResponseAndError{bytes, link, err}
+		responseChan <- &rawResponseAndError{bytes, link, nil, err}
 	}
 }
 
@@ -194,7 +190,8 @@ type NetworkRequest struct {
 }
 
 type rawResponseAndError struct {
-	bytes []byte
-	link  siesta.BrokerLink
-	err   error
+	bytes      []byte
+	link       siesta.BrokerLink
+	sendErr    error
+	receiveErr error
 }
