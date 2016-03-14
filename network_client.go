@@ -1,6 +1,7 @@
 package producer
 
 import (
+	"fmt"
 	"github.com/elodina/siesta"
 	"net"
 )
@@ -51,9 +52,21 @@ func (nc *NetworkClient) send(topic string, partition int32, batch []*ProducerRe
 	}
 	responseChan := nc.selector.Send(leader, request)
 
-	if nc.requiredAcks > 0 {
-		go listenForResponse(topic, partition, batch, responseChan)
-	} else {
+	go nc.listenForResponse(topic, partition, batch, responseChan)
+}
+
+func (nc *NetworkClient) listenForResponse(topic string, partition int32, batch []*ProducerRecord, responseChan <-chan *rawResponseAndError) {
+	response := <-responseChan
+
+	if response.sendErr != nil {
+		nc.connector.RefreshMetadata([]string{topic})
+		for _, record := range batch {
+			record.metadataChan <- &RecordMetadata{Record: record, Error: fmt.Errorf("Got an connection error while sending: %s", response.sendErr.Error())}
+		}
+		return
+	}
+
+	if nc.requiredAcks == 0 {
 		// acks = 0 case, just complete all requests
 		for _, record := range batch {
 			record.metadataChan <- &RecordMetadata{
@@ -64,15 +77,15 @@ func (nc *NetworkClient) send(topic string, partition int32, batch []*ProducerRe
 				Error:     siesta.ErrNoError,
 			}
 		}
+		return
 	}
-}
 
-func listenForResponse(topic string, partition int32, batch []*ProducerRecord, responseChan <-chan *rawResponseAndError) {
-	response := <-responseChan
-	if response.err != nil {
+	if response.receiveErr != nil {
+		nc.connector.RefreshMetadata([]string{topic})
 		for _, record := range batch {
-			record.metadataChan <- &RecordMetadata{Record: record, Error: response.err}
+			record.metadataChan <- &RecordMetadata{Record: record, Error: fmt.Errorf("Got an connection error while receiving: %s", response.receiveErr.Error())}
 		}
+		return
 	}
 
 	decoder := siesta.NewBinaryDecoder(response.bytes)
@@ -82,10 +95,15 @@ func listenForResponse(topic string, partition int32, batch []*ProducerRecord, r
 		for _, record := range batch {
 			record.metadataChan <- &RecordMetadata{Record: record, Error: decodingErr.Error()}
 		}
+		return
 	}
 
 	status, exists := produceResponse.Status[topic][partition]
 	if exists {
+		if status.Error == siesta.ErrNotLeaderForPartition {
+			nc.connector.RefreshMetadata([]string{topic})
+		}
+
 		currentOffset := status.Offset
 		for _, record := range batch {
 			record.metadataChan <- &RecordMetadata{
@@ -98,6 +116,7 @@ func listenForResponse(topic string, partition int32, batch []*ProducerRecord, r
 			currentOffset++
 		}
 	}
+
 }
 
 func (nc *NetworkClient) close() {
