@@ -15,8 +15,7 @@ type RecordAccumulator struct {
 	networkClient *NetworkClient
 	batchSize     int
 
-	closing chan bool
-	closed  chan bool
+	closeChan chan bool
 }
 
 func NewRecordAccumulator(config *RecordAccumulatorConfig) *RecordAccumulator {
@@ -25,8 +24,7 @@ func NewRecordAccumulator(config *RecordAccumulatorConfig) *RecordAccumulator {
 	accumulator.config = config
 	accumulator.batchSize = config.batchSize
 	accumulator.networkClient = config.networkClient
-	accumulator.closing = make(chan bool)
-	accumulator.closed = make(chan bool)
+	accumulator.closeChan = make(chan bool)
 
 	go accumulator.sender()
 
@@ -39,7 +37,7 @@ func (ra *RecordAccumulator) sender() {
 	batchIndex := 0
 	for {
 		select {
-		case <-ra.closing:
+		case <-ra.closeChan:
 			return
 		default:
 			select {

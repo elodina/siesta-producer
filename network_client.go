@@ -3,36 +3,22 @@ package producer
 import (
 	"fmt"
 	"github.com/elodina/siesta"
-	"net"
 )
 
 type NetworkClient struct {
-	connector               siesta.Connector
-	metadata                Metadata
-	socketSendBuffer        int
-	socketReceiveBuffer     int
-	clientId                string
-	nodeIndexOffset         int
-	correlation             int
-	metadataFetchInProgress bool
-	lastNoNodeAvailableMs   int64
-	selector                *Selector
-	connections             map[string]*net.TCPConn
-	requiredAcks            int
-	ackTimeoutMs            int32
+	connector    siesta.Connector
+	selector     *Selector
+	requiredAcks int
+	ackTimeoutMs int32
 }
 
-type NetworkClientConfig struct {
-}
-
-func NewNetworkClient(config NetworkClientConfig, connector siesta.Connector, producerConfig *ProducerConfig) *NetworkClient {
+func NewNetworkClient(connector siesta.Connector, producerConfig *ProducerConfig) *NetworkClient {
 	client := &NetworkClient{}
 	client.connector = connector
 	client.requiredAcks = producerConfig.RequiredAcks
 	client.ackTimeoutMs = producerConfig.AckTimeoutMs
 	selectorConfig := NewSelectorConfig(producerConfig)
 	client.selector = NewSelector(selectorConfig)
-	client.connections = make(map[string]*net.TCPConn, 0)
 	return client
 }
 

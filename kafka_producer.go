@@ -28,8 +28,6 @@ type RecordMetadata struct {
 	Error     error
 }
 
-type PartitionInfo struct{}
-type Metric struct{}
 type ProducerConfig struct {
 	Partitioner       Partitioner
 	MetadataExpire    time.Duration
@@ -94,19 +92,8 @@ type Producer interface {
 	// Send the given record asynchronously and return a channel which will eventually contain the response information.
 	Send(*ProducerRecord) <-chan *RecordMetadata
 
-	// Flush any accumulated records from the producer. Blocks until all sends are complete.
-	Flush()
-
-	// Get a list of partitions for the given topic for custom partition assignment. The partition metadata will change
-	// over time so this list should not be cached.
-	PartitionsFor(topic string) []PartitionInfo
-
-	// Return a map of metrics maintained by the producer
-	Metrics() map[string]Metric
-
-	// Tries to close the producer cleanly within the specified timeout. If the close does not complete within the
-	// timeout, fail any pending send requests and force close the producer.
-	Close(timeout time.Duration)
+	// Tries to close the producer cleanly.
+	Close()
 }
 
 type KafkaProducer struct {
@@ -114,13 +101,10 @@ type KafkaProducer struct {
 	time              time.Time
 	keySerializer     Serializer
 	valueSerializer   Serializer
-	metrics           map[string]Metric
 	messagesChan      chan *ProducerRecord
 	accumulatorConfig *RecordAccumulatorConfig
-	metricTags        map[string]string
 	connector         siesta.Connector
 	metadata          *Metadata
-	RecordsMetadata   chan *RecordMetadata
 }
 
 func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSerializer Serializer, connector siesta.Connector) *KafkaProducer {
@@ -128,15 +112,13 @@ func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSer
 	producer := &KafkaProducer{}
 	producer.config = config
 	producer.time = time.Now()
-	producer.metrics = make(map[string]Metric)
 	producer.messagesChan = make(chan *ProducerRecord, config.BatchSize)
 	producer.keySerializer = keySerializer
 	producer.valueSerializer = valueSerializer
 	producer.connector = connector
 	producer.metadata = NewMetadata(connector, config.MetadataExpire)
 
-	networkClientConfig := NetworkClientConfig{}
-	client := NewNetworkClient(networkClientConfig, connector, config)
+	client := NewNetworkClient(connector, config)
 
 	producer.accumulatorConfig = &RecordAccumulatorConfig{
 		batchSize:     config.BatchSize,
@@ -256,6 +238,10 @@ func (kp *KafkaProducer) messageDispatchLoop() {
 
 		accumulator <- message
 	}
+
+	for _, accumulator := range accumulators {
+		close(accumulator)
+	}
 }
 
 func (kp *KafkaProducer) topicDispatchLoop(topicMessagesChan chan *ProducerRecord) {
@@ -269,23 +255,12 @@ func (kp *KafkaProducer) topicDispatchLoop(topicMessagesChan chan *ProducerRecor
 
 		accumulator.input <- message
 	}
+
+	for _, accumulator := range accumulators {
+		close(accumulator.closeChan)
+	}
 }
 
-func (kp *KafkaProducer) Flush() {}
-
-func (kp *KafkaProducer) PartitionsFor(topic string) []PartitionInfo {
-	return []PartitionInfo{}
-}
-
-func (kp *KafkaProducer) Metrics() map[string]Metric {
-	return make(map[string]Metric)
-}
-
-// TODO return channel and remove timeout
-func (kp *KafkaProducer) Close(timeout time.Duration) {
-	//closed := kp.accumulator.close()
-	//select {
-	//case <-closed:
-	//case <-time.After(timeout):
-	//}
+func (kp *KafkaProducer) Close() {
+	close(kp.messagesChan)
 }

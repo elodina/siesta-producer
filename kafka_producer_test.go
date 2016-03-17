@@ -40,7 +40,7 @@ func TestProducerSend1(t *testing.T) {
 		t.Error("Could not get produce response within 5 seconds")
 	}
 
-	producer.Close(1 * time.Second)
+	producer.Close()
 }
 
 func TestProducerSend1000(t *testing.T) {
@@ -65,7 +65,7 @@ func TestProducerSend1000(t *testing.T) {
 		}
 	}
 
-	producer.Close(1 * time.Second)
+	producer.Close()
 }
 
 func TestProducerRequiredAcks0(t *testing.T) {
@@ -93,7 +93,7 @@ func TestProducerRequiredAcks0(t *testing.T) {
 		}
 	}
 
-	producer.Close(1 * time.Second)
+	producer.Close()
 }
 
 func TestProducerFlushTimeout(t *testing.T) {
@@ -120,7 +120,7 @@ func TestProducerFlushTimeout(t *testing.T) {
 		}
 	}
 
-	producer.Close(1 * time.Second)
+	producer.Close()
 }
 
 func TestProducerWithSeveralTopics(t *testing.T) {
@@ -132,7 +132,7 @@ func TestProducerWithSeveralTopics(t *testing.T) {
 	producer := NewKafkaProducer(producerConfig, ByteSerializer, StringSerializer, connector)
 	metadatas := make([]<-chan *RecordMetadata, 1000)
 	for i := 0; i < 1000; i++ {
-		topic := fmt.Sprintf("siesta-%d", rand.Intn(10))
+		topic := fmt.Sprintf("siesta--34-%d", rand.Intn(10))
 		metadatas[i] = producer.Send(&ProducerRecord{Topic: topic, Value: fmt.Sprintf("%d", i)})
 	}
 
