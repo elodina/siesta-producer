@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/elodina/siesta"
-	"github.com/yanzay/cfg"
 )
 
 type ProducerRecord struct {
@@ -26,44 +25,6 @@ type RecordMetadata struct {
 	Topic     string
 	Partition int32
 	Error     error
-}
-
-type ProducerConfig struct {
-	Partitioner       Partitioner
-	MetadataExpire    time.Duration
-	CompressionType   string
-	BatchSize         int
-	Linger            time.Duration
-	Retries           int
-	RetryBackoff      time.Duration
-	BlockOnBufferFull bool
-
-	ClientID        string
-	MaxRequests     int
-	SendRoutines    int
-	ReceiveRoutines int
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	RequiredAcks    int
-	AckTimeoutMs    int32
-	BrokerList      []string
-}
-
-func NewProducerConfig() *ProducerConfig {
-	return &ProducerConfig{
-		Partitioner:     NewHashPartitioner(),
-		MetadataExpire:  time.Minute,
-		BatchSize:       1000,
-		ClientID:        "siesta",
-		MaxRequests:     10,
-		SendRoutines:    10,
-		ReceiveRoutines: 10,
-		ReadTimeout:     5 * time.Second,
-		WriteTimeout:    5 * time.Second,
-		RequiredAcks:    1,
-		AckTimeoutMs:    1000,
-		Linger:          1 * time.Second,
-	}
 }
 
 type Serializer func(interface{}) ([]byte, error)
@@ -98,7 +59,6 @@ type Producer interface {
 
 type KafkaProducer struct {
 	config            *ProducerConfig
-	time              time.Time
 	keySerializer     Serializer
 	valueSerializer   Serializer
 	messagesChan      chan *ProducerRecord
@@ -111,7 +71,6 @@ func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSer
 	log.Println("Starting the Kafka producer")
 	producer := &KafkaProducer{}
 	producer.config = config
-	producer.time = time.Now()
 	producer.messagesChan = make(chan *ProducerRecord, config.BatchSize)
 	producer.keySerializer = keySerializer
 	producer.valueSerializer = valueSerializer
@@ -130,55 +89,6 @@ func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSer
 	log.Println("Kafka producer started")
 
 	return producer
-}
-
-func ProducerConfigFromFile(filename string) (*ProducerConfig, error) {
-	c, err := cfg.LoadNewMap(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	producerConfig := NewProducerConfig()
-	if err := setDurationConfig(&producerConfig.MetadataExpire, c["metadata.max.age"]); err != nil {
-		return nil, err
-	}
-	if err := setIntConfig(&producerConfig.BatchSize, c["batch.size"]); err != nil {
-		return nil, err
-	}
-	if err := setIntConfig(&producerConfig.RequiredAcks, c["acks"]); err != nil {
-		return nil, err
-	}
-	if err := setInt32Config(&producerConfig.AckTimeoutMs, c["timeout.ms"]); err != nil {
-		return nil, err
-	}
-	if err := setDurationConfig(&producerConfig.Linger, c["linger"]); err != nil {
-		return nil, err
-	}
-	setStringConfig(&producerConfig.ClientID, c["client.id"])
-	if err := setIntConfig(&producerConfig.SendRoutines, c["send.routines"]); err != nil {
-		return nil, err
-	}
-	if err := setIntConfig(&producerConfig.ReceiveRoutines, c["receive.routines"]); err != nil {
-		return nil, err
-	}
-	setBoolConfig(&producerConfig.BlockOnBufferFull, c["block.on.buffer.full"])
-	if err := setIntConfig(&producerConfig.Retries, c["retries"]); err != nil {
-		return nil, err
-	}
-	if err := setDurationConfig(&producerConfig.RetryBackoff, c["retry.backoff"]); err != nil {
-		return nil, err
-	}
-	setStringConfig(&producerConfig.CompressionType, c["compression.type"])
-	if err := setIntConfig(&producerConfig.MaxRequests, c["max.requests"]); err != nil {
-		return nil, err
-	}
-
-	setStringsConfig(&producerConfig.BrokerList, c["bootstrap.servers"])
-	if len(producerConfig.BrokerList) == 0 {
-		setStringsConfig(&producerConfig.BrokerList, c["metadata.broker.list"])
-	}
-
-	return producerConfig, nil
 }
 
 func (kp *KafkaProducer) Send(record *ProducerRecord) <-chan *RecordMetadata {
