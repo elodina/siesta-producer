@@ -47,6 +47,8 @@ func TestSelector(t *testing.T) {
 	response2 := <-responseChan2
 	response1 := <-responseChan1
 
-	assert(t, response1.err, nil)
-	assert(t, response2.err, nil)
+	assert(t, response1.receiveErr, nil)
+	assert(t, response1.sendErr, nil)
+	assert(t, response2.receiveErr, nil)
+	assert(t, response2.sendErr, nil)
 }

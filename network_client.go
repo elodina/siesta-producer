@@ -36,7 +36,16 @@ func NewNetworkClient(config NetworkClientConfig, connector siesta.Connector, pr
 	return client
 }
 
-func (nc *NetworkClient) send(topic string, partition int32, batch []*ProducerRecord) {
+func (nc *NetworkClient) send(batch []*ProducerRecord) {
+	if len(batch) == 0 {
+		Logger.Warn("NetworkClient received an empty batch?")
+		return
+	}
+
+	msg := batch[0]
+	topic := msg.Topic
+	partition := msg.Partition
+
 	leader, err := nc.connector.GetLeader(topic, partition)
 	if err != nil {
 		for _, record := range batch {
