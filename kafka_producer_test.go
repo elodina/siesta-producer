@@ -132,7 +132,7 @@ func TestProducerWithSeveralTopics(t *testing.T) {
 	producer := NewKafkaProducer(producerConfig, ByteSerializer, StringSerializer, connector)
 	metadatas := make([]<-chan *RecordMetadata, 1000)
 	for i := 0; i < 1000; i++ {
-		topic := fmt.Sprintf("siesta--34-%d", rand.Intn(10))
+		topic := fmt.Sprintf("siesta-%d", rand.Intn(10))
 		metadatas[i] = producer.Send(&ProducerRecord{Topic: topic, Value: fmt.Sprintf("%d", i)})
 	}
 

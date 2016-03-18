@@ -25,10 +25,7 @@ func TestSelector(t *testing.T) {
 	selectorConfig := DefaultSelectorConfig()
 	selector := NewSelector(selectorConfig)
 
-	link := siesta.NewBrokerLink(&siesta.Broker{ID: 1, Host: "localhost", Port: 9092},
-		true,
-		1*time.Minute,
-		5)
+	connection := siesta.NewBrokerConnection(&siesta.Broker{ID: 1, Host: "localhost", Port: 9092}, time.Minute)
 
 	request1 := new(siesta.ProduceRequest)
 	request1.RequiredAcks = 1
@@ -40,8 +37,8 @@ func TestSelector(t *testing.T) {
 	request2.AckTimeoutMs = 2000
 	request2.AddMessage("siesta", 0, &siesta.Message{MagicByte: 0, Value: []byte("hello world again")})
 
-	responseChan1 := selector.Send(link, request1)
-	responseChan2 := selector.Send(link, request2)
+	responseChan1 := selector.Send(connection, request1)
+	responseChan2 := selector.Send(connection, request2)
 
 	//make sure we can read in other order than was sent
 	response2 := <-responseChan2

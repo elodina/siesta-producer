@@ -3,7 +3,6 @@ package producer
 import (
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/elodina/siesta"
 )
