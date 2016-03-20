@@ -1,25 +1,31 @@
 package producer
 
 import (
-	"fmt"
 	"github.com/elodina/siesta"
+	"time"
 )
 
-type NetworkClient struct {
-	connector    siesta.Connector
-	selector     *Selector
-	requiredAcks int
-	ackTimeoutMs int32
+type NetworkClientConfig struct {
+	RequiredAcks int
+	AckTimeoutMs int32
+	Retries      int
+	RetryBackoff time.Duration
+	Topic        string
+	Partition    int32
 }
 
-func NewNetworkClient(connector siesta.Connector, producerConfig *ProducerConfig) *NetworkClient {
-	client := &NetworkClient{}
-	client.connector = connector
-	client.requiredAcks = producerConfig.RequiredAcks
-	client.ackTimeoutMs = producerConfig.AckTimeoutMs
-	selectorConfig := NewSelectorConfig(producerConfig)
-	client.selector = NewSelector(selectorConfig)
-	return client
+type NetworkClient struct {
+	*NetworkClientConfig
+	connector siesta.Connector
+	selector  *Selector
+}
+
+func NewNetworkClient(config *NetworkClientConfig, connector siesta.Connector, selector *Selector) *NetworkClient {
+	return &NetworkClient{
+		NetworkClientConfig: config,
+		connector:           connector,
+		selector:            selector,
+	}
 }
 
 func (nc *NetworkClient) send(batch []*ProducerRecord) {
@@ -28,83 +34,78 @@ func (nc *NetworkClient) send(batch []*ProducerRecord) {
 		return
 	}
 
-	msg := batch[0]
-	topic := msg.Topic
-	partition := msg.Partition
+	request := nc.buildProduceRequest(batch)
 
-	leader, err := nc.connector.GetLeader(topic, partition)
-	if err != nil {
-		for _, record := range batch {
-			record.metadataChan <- &RecordMetadata{Record: record, Error: err}
-		}
-	}
-
-	request := new(siesta.ProduceRequest)
-	request.RequiredAcks = int16(nc.requiredAcks)
-	request.AckTimeoutMs = nc.ackTimeoutMs
-	for _, record := range batch {
-		request.AddMessage(record.Topic, record.Partition, &siesta.Message{Key: record.encodedKey, Value: record.encodedValue})
-	}
-	responseChan := nc.selector.Send(leader, request)
-
-	go nc.listenForResponse(topic, partition, batch, responseChan)
-}
-
-func (nc *NetworkClient) listenForResponse(topic string, partition int32, batch []*ProducerRecord, responseChan <-chan *rawResponseAndError) {
-	response := <-responseChan
-
-	if response.sendErr != nil {
-		nc.connector.RefreshMetadata([]string{topic})
-		for _, record := range batch {
-			record.metadataChan <- &RecordMetadata{Record: record, Error: fmt.Errorf("Got an connection error while sending: %s", response.sendErr.Error())}
-		}
+	err := nc.trySend(request, batch)
+	if err == nil {
 		return
 	}
 
-	if nc.requiredAcks == 0 {
+	for i := 0; i < nc.Retries; i++ {
+		err = nc.trySend(request, batch)
+		if err == nil {
+			return
+		}
+
+		time.Sleep(nc.RetryBackoff)
+	}
+
+	for _, record := range batch {
+		record.metadataChan <- &RecordMetadata{Record: record, Error: err}
+	}
+}
+
+func (nc *NetworkClient) trySend(request *siesta.ProduceRequest, batch []*ProducerRecord) error {
+	leader, err := nc.connector.GetLeader(nc.Topic, nc.Partition)
+	if err != nil {
+		return err
+	}
+
+	response := <-nc.selector.Send(leader, request)
+	if response.sendErr != nil {
+		nc.connector.RefreshMetadata([]string{nc.Topic})
+		return response.sendErr
+	}
+
+	if nc.RequiredAcks == 0 {
 		// acks = 0 case, just complete all requests
 		for _, record := range batch {
 			record.metadataChan <- &RecordMetadata{
 				Record:    record,
 				Offset:    -1,
-				Topic:     topic,
-				Partition: partition,
+				Topic:     nc.Topic,
+				Partition: nc.Partition,
 				Error:     siesta.ErrNoError,
 			}
 		}
-		return
+		return nil
 	}
 
 	if response.receiveErr != nil {
-		nc.connector.RefreshMetadata([]string{topic})
-		for _, record := range batch {
-			record.metadataChan <- &RecordMetadata{Record: record, Error: fmt.Errorf("Got an connection error while receiving: %s", response.receiveErr.Error())}
-		}
-		return
+		nc.connector.RefreshMetadata([]string{nc.Topic})
+		return response.receiveErr
 	}
 
 	decoder := siesta.NewBinaryDecoder(response.bytes)
 	produceResponse := new(siesta.ProduceResponse)
 	decodingErr := produceResponse.Read(decoder)
 	if decodingErr != nil {
-		for _, record := range batch {
-			record.metadataChan <- &RecordMetadata{Record: record, Error: decodingErr.Error()}
-		}
-		return
+		return decodingErr.Error()
 	}
 
-	status, exists := produceResponse.Status[topic][partition]
+	status, exists := produceResponse.Status[nc.Topic][nc.Partition]
 	if exists {
 		if status.Error == siesta.ErrNotLeaderForPartition {
-			nc.connector.RefreshMetadata([]string{topic})
+			nc.connector.RefreshMetadata([]string{nc.Topic})
+			return status.Error
 		}
 
 		currentOffset := status.Offset
 		for _, record := range batch {
 			record.metadataChan <- &RecordMetadata{
 				Record:    record,
-				Topic:     topic,
-				Partition: partition,
+				Topic:     nc.Topic,
+				Partition: nc.Partition,
 				Offset:    currentOffset,
 				Error:     status.Error,
 			}
@@ -112,6 +113,18 @@ func (nc *NetworkClient) listenForResponse(topic string, partition int32, batch 
 		}
 	}
 
+	return nil
+}
+
+func (nc *NetworkClient) buildProduceRequest(batch []*ProducerRecord) *siesta.ProduceRequest {
+	request := new(siesta.ProduceRequest)
+	request.RequiredAcks = int16(nc.RequiredAcks)
+	request.AckTimeoutMs = nc.AckTimeoutMs
+	for _, record := range batch {
+		request.AddMessage(record.Topic, record.Partition, &siesta.Message{Key: record.encodedKey, Value: record.encodedValue})
+	}
+
+	return request
 }
 
 func (nc *NetworkClient) close() {

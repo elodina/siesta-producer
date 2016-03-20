@@ -23,14 +23,13 @@ import (
 )
 
 type ProducerConfig struct {
-	Partitioner       Partitioner
-	MetadataExpire    time.Duration
-	CompressionType   string
-	BatchSize         int
-	Linger            time.Duration
-	Retries           int
-	RetryBackoff      time.Duration
-	BlockOnBufferFull bool
+	Partitioner     Partitioner
+	MetadataExpire  time.Duration
+	CompressionType string
+	BatchSize       int
+	Linger          time.Duration
+	Retries         int
+	RetryBackoff    time.Duration
 
 	ClientID        string
 	MaxRequests     int
@@ -47,7 +46,7 @@ func NewProducerConfig() *ProducerConfig {
 	return &ProducerConfig{
 		Partitioner:     NewHashPartitioner(),
 		MetadataExpire:  time.Minute,
-		BatchSize:       1000,
+		BatchSize:       16384,
 		ClientID:        "siesta",
 		MaxRequests:     10,
 		SendRoutines:    10,
@@ -55,8 +54,9 @@ func NewProducerConfig() *ProducerConfig {
 		ReadTimeout:     5 * time.Second,
 		WriteTimeout:    5 * time.Second,
 		RequiredAcks:    1,
-		AckTimeoutMs:    1000,
+		AckTimeoutMs:    30000,
 		Linger:          1 * time.Second,
+		RetryBackoff:    100 * time.Millisecond,
 	}
 }
 
@@ -89,7 +89,6 @@ func ProducerConfigFromFile(filename string) (*ProducerConfig, error) {
 	if err := setIntConfig(&producerConfig.ReceiveRoutines, c["receive.routines"]); err != nil {
 		return nil, err
 	}
-	setBoolConfig(&producerConfig.BlockOnBufferFull, c["block.on.buffer.full"])
 	if err := setIntConfig(&producerConfig.Retries, c["retries"]); err != nil {
 		return nil, err
 	}
@@ -112,12 +111,6 @@ func ProducerConfigFromFile(filename string) (*ProducerConfig, error) {
 func setStringConfig(where *string, what string) {
 	if what != "" {
 		*where = what
-	}
-}
-
-func setBoolConfig(where *bool, what string) {
-	if what != "" {
-		*where = what == "true"
 	}
 }
 

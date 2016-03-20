@@ -3,9 +3,8 @@ package producer
 import "time"
 
 type RecordAccumulatorConfig struct {
-	batchSize     int
-	linger        time.Duration
-	networkClient *NetworkClient
+	batchSize int
+	linger    time.Duration
 }
 
 type RecordAccumulator struct {
@@ -18,12 +17,12 @@ type RecordAccumulator struct {
 	closeChan chan bool
 }
 
-func NewRecordAccumulator(config *RecordAccumulatorConfig) *RecordAccumulator {
+func NewRecordAccumulator(config *RecordAccumulatorConfig, networkClient *NetworkClient) *RecordAccumulator {
 	accumulator := &RecordAccumulator{}
 	accumulator.input = make(chan *ProducerRecord, config.batchSize)
 	accumulator.config = config
 	accumulator.batchSize = config.batchSize
-	accumulator.networkClient = config.networkClient
+	accumulator.networkClient = networkClient
 	accumulator.closeChan = make(chan bool)
 
 	go accumulator.sender()

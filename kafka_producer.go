@@ -57,13 +57,13 @@ type Producer interface {
 }
 
 type KafkaProducer struct {
-	config            *ProducerConfig
-	keySerializer     Serializer
-	valueSerializer   Serializer
-	messagesChan      chan *ProducerRecord
-	accumulatorConfig *RecordAccumulatorConfig
-	connector         siesta.Connector
-	metadata          *Metadata
+	config          *ProducerConfig
+	keySerializer   Serializer
+	valueSerializer Serializer
+	messagesChan    chan *ProducerRecord
+	connector       siesta.Connector
+	metadata        *Metadata
+	selector        *Selector
 }
 
 func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSerializer Serializer, connector siesta.Connector) *KafkaProducer {
@@ -76,13 +76,9 @@ func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSer
 	producer.connector = connector
 	producer.metadata = NewMetadata(connector, config.MetadataExpire)
 
-	client := NewNetworkClient(connector, config)
+	selectorConfig := NewSelectorConfig(config)
+	producer.selector = NewSelector(selectorConfig)
 
-	producer.accumulatorConfig = &RecordAccumulatorConfig{
-		batchSize:     config.BatchSize,
-		linger:        config.Linger,
-		networkClient: client,
-	}
 	go producer.messageDispatchLoop()
 
 	log.Println("Kafka producer started")
@@ -158,7 +154,21 @@ func (kp *KafkaProducer) topicDispatchLoop(topicMessagesChan chan *ProducerRecor
 	for message := range topicMessagesChan {
 		accumulator := accumulators[message.Partition]
 		if accumulator == nil {
-			accumulator = NewRecordAccumulator(kp.accumulatorConfig)
+			networkClientConfig := &NetworkClientConfig{
+				RequiredAcks: kp.config.RequiredAcks,
+				AckTimeoutMs: kp.config.AckTimeoutMs,
+				Retries:      kp.config.Retries,
+				RetryBackoff: kp.config.RetryBackoff,
+				Topic:        message.Topic,
+				Partition:    message.Partition,
+			}
+			networkClient := NewNetworkClient(networkClientConfig, kp.connector, kp.selector)
+
+			accumulatorConfig := &RecordAccumulatorConfig{
+				batchSize: kp.config.BatchSize,
+				linger:    kp.config.Linger,
+			}
+			accumulator = NewRecordAccumulator(accumulatorConfig, networkClient)
 			accumulators[message.Partition] = accumulator
 		}
 
