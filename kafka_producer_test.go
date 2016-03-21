@@ -18,6 +18,7 @@ package producer
 import (
 	"fmt"
 	"github.com/elodina/siesta"
+	"math/rand"
 	"testing"
 	"time"
 )
@@ -39,7 +40,7 @@ func TestProducerSend1(t *testing.T) {
 		t.Error("Could not get produce response within 5 seconds")
 	}
 
-	producer.Close(1 * time.Second)
+	producer.Close()
 }
 
 func TestProducerSend1000(t *testing.T) {
@@ -64,7 +65,7 @@ func TestProducerSend1000(t *testing.T) {
 		}
 	}
 
-	producer.Close(1 * time.Second)
+	producer.Close()
 }
 
 func TestProducerRequiredAcks0(t *testing.T) {
@@ -92,7 +93,7 @@ func TestProducerRequiredAcks0(t *testing.T) {
 		}
 	}
 
-	producer.Close(1 * time.Second)
+	producer.Close()
 }
 
 func TestProducerFlushTimeout(t *testing.T) {
@@ -119,5 +120,28 @@ func TestProducerFlushTimeout(t *testing.T) {
 		}
 	}
 
-	producer.Close(1 * time.Second)
+	producer.Close()
+}
+
+func TestProducerWithSeveralTopics(t *testing.T) {
+	connector := testConnector(t)
+	producerConfig := NewProducerConfig()
+	producerConfig.BatchSize = 100
+	producerConfig.RequiredAcks = 1
+
+	producer := NewKafkaProducer(producerConfig, ByteSerializer, StringSerializer, connector)
+	metadatas := make([]<-chan *RecordMetadata, 1000)
+	for i := 0; i < 1000; i++ {
+		topic := fmt.Sprintf("siesta-%d", rand.Intn(10))
+		metadatas[i] = producer.Send(&ProducerRecord{Topic: topic, Value: fmt.Sprintf("%d", i)})
+	}
+
+	for _, metadataChan := range metadatas {
+		select {
+		case metadata := <-metadataChan:
+			assert(t, metadata.Error, siesta.ErrNoError)
+		case <-time.After(10 * time.Second):
+			t.Fatal("Could not get produce response within 5 seconds")
+		}
+	}
 }
