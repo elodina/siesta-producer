@@ -40,6 +40,8 @@ type ProducerConfig struct {
 	RequiredAcks    int
 	AckTimeoutMs    int32
 	BrokerList      []string
+
+	EnableMetrics bool
 }
 
 func NewProducerConfig() *ProducerConfig {

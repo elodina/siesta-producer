@@ -12,13 +12,15 @@ type Metadata struct {
 	metadataExpire time.Duration
 	cache          map[string]*metadataEntry
 	metadataLock   sync.RWMutex
+	metrics        ProducerMetrics
 }
 
-func NewMetadata(connector siesta.Connector, metadataExpire time.Duration) *Metadata {
+func NewMetadata(connector siesta.Connector, metadataExpire time.Duration, metrics ProducerMetrics) *Metadata {
 	return &Metadata{
 		connector:      connector,
 		metadataExpire: metadataExpire,
 		cache:          make(map[string]*metadataEntry),
+		metrics:        metrics,
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"errors"
 	"github.com/elodina/siesta"
 )
 
@@ -64,17 +65,23 @@ type KafkaProducer struct {
 	connector       siesta.Connector
 	metadata        *Metadata
 	selector        *Selector
+	metrics         ProducerMetrics
 }
 
 func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSerializer Serializer, connector siesta.Connector) *KafkaProducer {
 	log.Println("Starting the Kafka producer")
 	producer := &KafkaProducer{}
+	producer.metrics = noOpProducerMetrics
+	if config.EnableMetrics {
+		producer.metrics = NewKafkaProducerMetrics(config.ClientID)
+	}
+
 	producer.config = config
 	producer.messagesChan = make(chan *ProducerRecord, config.BatchSize)
 	producer.keySerializer = keySerializer
 	producer.valueSerializer = valueSerializer
 	producer.connector = connector
-	producer.metadata = NewMetadata(connector, config.MetadataExpire)
+	producer.metadata = NewMetadata(connector, config.MetadataExpire, producer.metrics)
 
 	selectorConfig := NewSelectorConfig(config)
 	producer.selector = NewSelector(selectorConfig)
@@ -178,6 +185,15 @@ func (kp *KafkaProducer) topicDispatchLoop(topicMessagesChan chan *ProducerRecor
 	for _, accumulator := range accumulators {
 		close(accumulator.closeChan)
 	}
+}
+
+// Metrics returns a metrics structure for this producer. An error is returned if metrics are disabled.
+func (kp *KafkaProducer) Metrics() (ProducerMetrics, error) {
+	if !kp.config.EnableMetrics {
+		return nil, errors.New("Metrics are disabled. Use ProducerConfig.EnableMetrics to enable")
+	}
+
+	return kp.metrics, nil
 }
 
 func (kp *KafkaProducer) Close() {
